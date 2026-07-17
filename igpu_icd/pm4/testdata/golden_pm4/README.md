@@ -1,10 +1,12 @@
 # Golden PM4 captures — D1–D4 self-test streams
 
-STATUS: HOOK IMPLEMENTED, NOT YET CAPTURED. The GCNgfx capture hook is in
-place (2026-07-17, builds green with and without the flag); what remains is
-one instrumented run on the X5000 — which redeploys gcngfx.library and
-therefore needs the user's explicit go-ahead per the TEST:/Kicklayout
-safety rules.
+STATUS: **CAPTURED 2026-07-17** on the X5000 RX 560 (gcn-wb boot, gcngfx
+`956f0ab` + `EXTRA_CFLAGS=-DGCN_PM4_CAPTURE`). All five streams landed in
+one boot with every readback oracle PASSED on the same run; each capture
+has its `.txt` sidecar (embedded MC addresses, masking rules). Dword
+counts: d1_solid=127, d2a_sample=141, d2b_blit=141, d3_srcover=144,
+d4_scale=144. Each stream opens with SET_SH_REG (VS program) and closes
+with the 6-dword EOP fence (masked per below).
 
 ## What goes here
 

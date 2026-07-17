@@ -1,0 +1,15 @@
+d4_scale.pm4 — golden PM4 capture (X5000 RX 560, gcn-wb boot, 2026-07-17)
+gcngfx rev: 956f0ab (capture hook build, EXTRA_CFLAGS=-DGCN_PM4_CAPTURE)
+test: bilinear 2x magnify of horizontal gradient, oracle: smooth monotone ramp (PASSED)
+shaders: gcn_vs_fullscreen + gcn_ps_scale (offline LLVM gfx803 blobs from gcn_shaders.c)
+RT: 64x64 linear, CB 8_8_8_8 UNORM (TILE_MODE_INDEX=8 LINEAR_GENERAL)
+embedded GPU (MC) addresses: RT 000000F4051E1000, SRC 000000F4051E5000
+  - CB_COLOR0_BASE holds RT>>8; SPI_SHADER_PGM_LO/HI hold shader VA>>8/>>40
+  - T# descriptor dwords 0-1 hold the texture base VA (tests with TEX/COMB/SRC)
+masking rule: final 6 dwords = EVENT_WRITE_EOP + CACHE_FLUSH_AND_INV_TS fence
+  (backend-owned per CONTRACTS.md §2) -- reference-only; its dwords [N-4],[N-3]
+  embed the writeback address. Diff harness masks the EOP packet and all
+  address-bearing words listed above.
+format: raw little-endian uint32 stream, byte-identical to ring memory
+capture: PM4CAP serial dump (COM7), reconstructed host-order->LE; boot's
+  readback oracles all PASSED on the same run (serial log of 2026-07-17)
