@@ -6,10 +6,20 @@ If your lane discovers a contract is wrong or incomplete: STOP, write up the
 gap (what you needed, why the contract can't express it), and report. Do not
 edit this file or work around it by reaching into another lane's directory.
 
-Status: DRAFT v0.1 (2026-07-16). Field layouts below are grounded in the
-HW-verified D0–D4 register recipes (`GCNgfx/src/gfx/gcn_gfx.c`,
-`GCNgfx/bench-results/d0..d4_*.md`) but have not yet carried a compiled
-shader end-to-end. Expect a v0.2 after first integration.
+Status: v0.2 (2026-07-17). §2's transport is IMPLEMENTED and deployed:
+gcngfx executes `GPU_QUEUE_RENDER` payloads on the CP gfx ring
+(`gcn_gfx_submit_payload`, backend EOP fence, synchronous v1) and the
+device-address query is live (ratified surface below). Golden captures for
+Lane D are committed under `pm4/testdata/golden_pm4/`. Field layouts are
+grounded in the HW-verified D0–D4 register recipes but have not yet carried
+a COMPILED shader end-to-end — expect a v0.3 after the first Lane B+D
+integration. **HW caveat for Lane A**: exclusive-fullscreen WSI
+(`GPU_AcquireDisplayA`) is blocked on real hardware — gcngfx's DisplayHook
+is gated off because registering it kills the boot's first SDMA fence (a
+latent gpu.chip bug, open P96 item; GCNgfx
+`bench-results/displayhook_sdma_fence_x5000_17Jul2026.md`). Windowed
+present and render submit are unaffected; vgfx/QEMU fullscreen still works
+for Lane A development.
 
 ---
 

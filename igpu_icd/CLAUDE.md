@@ -28,7 +28,10 @@ call sequence):
    `GPU_QueryTimelineA`; binary semaphores ICD-internal.
 4. **WSI**: windowed present like the software ICD; fullscreen/exclusive via
    `GPU_AcquireDisplayA(GPUTAG_SwapchainDepth)` + `GPU_NextDisplayBufferA` +
-   `GPU_PresentA` + `GPU_ReleaseDisplay`.
+   `GPU_PresentA` + `GPU_ReleaseDisplay`. NB (2026-07-17): fullscreen works
+   against vgfx/QEMU (your lane's target) but is BLOCKED on the X5000 until
+   the gpu.chip DisplayHook bug is fixed (CONTRACTS.md status note) — build
+   the fullscreen path, verify it on vgfx, don't chase HW failures there.
 5. **Shading fallback**: CPU-shade via the software ICD's SPIR-V interpreter
    until the compiler + pm4 lanes integrate. Structure command-buffer
    recording so the execution backend (CPU interpret vs PM4 emit) is a
