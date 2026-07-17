@@ -93,11 +93,14 @@ Hard constraints the compiler must honour (HW-verified findings):
   EVENT_WRITE_EOP + CACHE_FLUSH_AND_INV_TS done-fence (D1 finding) and
   maps it to the returned GpuFence. The ICD never emits EOP packets.
 - All GPU addresses inside the stream (RT surfaces, shader PGM_LO,
-  descriptor tables, vertex/index V#s) are **GPU VAs of IGpu buffers**,
-  obtained via `GPUTAG_DeviceAddress` — **PENDING IGpu API addition
-  (Agent C item 3; coordinator tracks with the P96 api-v1 list).** Until
-  it lands, lanes use the self-test-style direct-VRAM addressing behind
-  a shim that will swap to the tag.
+  descriptor tables, vertex/index V#s) are **GPU VAs of IGpu buffers**.
+  **PROPOSED** (2026-07-17, needs P96 integration-owner ratification):
+  `GPU_GetAttrsA` with `GPUATTR_Buffer` (input) + `GPUATTR_DeviceAddress`
+  (`uint64 *` out), backed by an optional backend op `BufferAddress` and
+  a `GPUCAPF_DEVICEADDRESS` cap the core derives from the ops table —
+  full design in `P96_Replacement/docs/DEVICE_ADDRESS_PROPOSAL.md`. Until
+  ratified, lanes use the self-test-style direct-VRAM addressing behind a
+  shim that will swap to the attr.
 - Queue: `GPU_QUEUE_RENDER`. Compute later via the same contract on
   DISPATCH packets.
 
