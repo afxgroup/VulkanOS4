@@ -13,13 +13,17 @@ device-address query is live (ratified surface below). Golden captures for
 Lane D are committed under `pm4/testdata/golden_pm4/`. Field layouts are
 grounded in the HW-verified D0–D4 register recipes but have not yet carried
 a COMPILED shader end-to-end — expect a v0.3 after the first Lane B+D
-integration. **HW caveat for Lane A**: exclusive-fullscreen WSI
-(`GPU_AcquireDisplayA`) is blocked on real hardware — gcngfx's DisplayHook
-is gated off because registering it kills the boot's first SDMA fence (a
-latent gpu.chip bug, open P96 item; GCNgfx
-`bench-results/displayhook_sdma_fence_x5000_17Jul2026.md`). Windowed
-present and render submit are unaffected; vgfx/QEMU fullscreen still works
-for Lane A development.
+integration. **Lane A HW caveat LIFTED (2026-07-19)**: exclusive-fullscreen WSI
+(`GPU_AcquireDisplayA`) now works on real hardware — the "DisplayHook
+kills the first SDMA fence" finding was refuted by an interleaved re-test
+(7/7 boots pass both arms) and gcngfx registers its hook by default;
+validator stage 3 ran ACQUIRE → 30/30 flip-rotated presents → RELEASE on
+the X5000 (GCNgfx `bench-results/displayhook_exonerated_x5000_19Jul2026.md`).
+Submit-path HW caveats CLEARED (2026-07-19, GCNgfx
+`bench-results/drawless_submit_and_timeline_fix_x5000_19Jul2026.md`,
+`igpu_vk_validate` 15/15 ALL PASS): draw-less render submits are now a
+no-op that retires on the fence (see §2), and timeline signals advance
+correctly on gcngfx's synchronous submit.
 
 ---
 
@@ -102,6 +106,17 @@ Hard constraints the compiler must honour (HW-verified findings):
 - **Fencing is the backend's job**: gcngfx appends the
   EVENT_WRITE_EOP + CACHE_FLUSH_AND_INV_TS done-fence (D1 finding) and
   maps it to the returned GpuFence. The ICD never emits EOP packets.
+- **A draw-less render submit is a NO-OP that still retires its fence.**
+  A payload containing no DRAW_*/DISPATCH_* packet renders nothing, and
+  because state is per-submit (above), a state-only or empty/NOP payload
+  has no persistent effect either. gcngfx does NOT execute it on the gfx
+  ring (an armed CE deadlocks on a draw-less stream — CE_WAITING_ON_DE,
+  HW-proven) and simply retires it on the shared fence: the returned
+  GpuFence/timeline signals normally. So a Vulkan fence-only or
+  barrier-only `vkQueueSubmit` is safe and correct. Corollary: never rely
+  on a side-effecting non-render packet (WRITE_DATA/COPY_DATA/EVENT) in a
+  draw-less render payload — it will be skipped; route copies and events
+  through the transfer queue.
 - All GPU addresses inside the stream (RT surfaces, shader PGM_LO,
   descriptor tables, vertex/index V#s) are **GPU VAs of IGpu buffers**,
   obtained via the **RATIFIED v6 surface** (accepted + implemented
