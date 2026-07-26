@@ -62,7 +62,7 @@ its QEMU-only checks as unproven on gcngfx until someone runs them there.
 7. **Barrier-only / fence-only submits**: use the ratified fence-only submit,
    `GPU_SubmitA(queue, NULL, 0, tags)` — NOT an empty PM4 payload the backend
    has to recognise as work-free. Read CONTRACTS.md §2 first: gcngfx does not
-   accept the ratified form yet (`GPUERR_TIMEOUT`), so you need a per-backend
+   accept the ratified form yet (`GPUERR_BADARGS`), so you need a per-backend
    fallback behind ONE helper, with an expiry date. Numbered last because it
    was added on 2026-07-26; items 1–6 keep their numbers, which other documents
    cite (§4 = WSI).

@@ -30,9 +30,16 @@ fence-only or barrier-only `vkQueueSubmit` as a **draw-less PM4 payload**, which
 the backend recognises and skips. P96 has since ratified the explicit form:
 `GPU_SubmitA(queue, NULL, 0, tags)` (`dd3a6fe`).
 
-**Linux precedent.** amdgpu does not parse indirect buffers; the kernel never
-recognises payload *content*. Anything the kernel must act on gets an explicit
-uAPI verb.
+**Linux precedent — AMENDED 2026-07-26, the absolute form was wrong.** This
+said "amdgpu does not parse indirect buffers; the kernel never recognises
+payload content". Checked against `refs/linux-4.14`: true for GFX/compute/SDMA,
+which only kmap an IB when a parser exists, but **false as an absolute** — six
+UVD/VCE rings bind a real `parse_cs` that walks the stream, patches addresses
+into it, and rejects an IB lacking a required packet type. Linux's `radeon`
+driver also parses every packet on SI/CIK's VM path, so GCN-class hardware plus
+a GPU VM did not make parsing unnecessary in Linux either. The argument survives
+on its own merits — an explicit uAPI verb beats content introspection, and it is
+what keeps the two sides' obligations separable — but not by appeal to authority.
 
 **Suggestion.** CONTRACTS **v0.3** should make fence-only submit the sanctioned
 spelling and retire the draw-less-payload contract. Note the ordering
@@ -88,13 +95,59 @@ survivable at this scale.
 externally authored suite that finds what the authors did not think to test.
 Piglit and crucible complement it; they do not replace it.
 
-**Suggestion.** Once `gcn_vk` enumerates a device, running even a **subset of
-the real Vulkan CTS** is the highest-leverage investment available to this
-project. Two AmigaOS-specific reasons beyond the usual: the software ICD gives a
-reference implementation to diff against on the same machine, and a big-endian
-host will fail CTS cases that no hand-written test would think to write. Worth
-scoping the port cost early — if the harness is impractical, knowing that
-sooner shapes how much the in-house suites must carry.
+**INVESTIGATED 2026-07-26 — the verdict is: do NOT attempt a dEQP-VK port.**
+This item originally recommended it as "the highest-leverage investment
+available". That was wrong, and the reason is not cost — it is that **Khronos
+has explicitly declared big-endian unsupported and enforced it with
+preprocessor errors**:
+
+- `vkImageUtil.cpp:3592-3608` — inside **`mapVkFormat()`**, the function that
+  translates every `VkFormat` and on which essentially the whole suite depends:
+  `#else` / `#error "Big-endian not supported"`. Cause is exactly the predicted
+  class: `A8B8G8R8_*_PACK32` is a *packed* format shortcut to a *byte-order*
+  `tcu` format, equivalent only on LE.
+- `vkImageUtil.cpp:1156-1158` — same in `getCorePlanarFormatDescription()`.
+- `vkPrograms.cpp:150-158` — `createProgramBinaryFromSpirV`, the single funnel
+  for all shader creation, does `TCU_THROW(InternalError, "SPIR-V endianness
+  translation not supported")` on a non-native-endianness binary. So on BE,
+  every test that compiles or assembles a shader throws.
+
+Both `#error`s have been in the tree since ~2016 and remain on `main`. Corroboration
+that nobody has ever done this: 2 issues in project history matching "big
+endian" (one OpenGL file), **0** matching `s390x`/`powerpc`/`ppc64`/`sparc`, and
+a global code search for `DE_ENDIANNESS=DE_BIG_ENDIAN` returns **0** results —
+no maintained BE fork exists to inherit.
+
+**The trap that would have cost weeks.** `framework/delibs/cmake/Defs.cmake`
+never consults `CMAKE_SYSTEM_PROCESSOR`; it infers CPU from pointer size alone,
+so 32-bit PowerPC sets `DE_CPU_X86`. The endianness cascade then tests
+`DE_CPU == DE_CPU_X86` *before* the `__BYTE_ORDER__` fallback, and unlike the
+MIPS branch it has no sanity check. So the default build **compiles, declares
+itself little-endian x86, bypasses both `#error`s and the `TCU_THROW`, and
+silently generates wrong reference data** wherever packed formats appear. A
+suite that appears to work and lies is the worst available outcome. The honest
+build (`-DDE_ENDIANNESS=DE_BIG_ENDIAN`) does not compile.
+
+**Recommended instead: Amber** (google/amber). It survives because it never
+links `vkImageUtil.cpp` or `vkPrograms.cpp`: expectations are declared as typed
+values in the script rather than composed by LE bit-packing, there is no
+`#error` and no `TCU_THROW`, and the risk surface is ~4 MB of readable code
+instead of 115 MB. **Caveat: Amber has no endianness handling either** — the
+word appears once in the whole project, in a doc asserting little-endian scalar
+layout — so treat its packed-format and image-dump paths as suspect from day
+one. It is triageable; dEQP is not.
+
+Also viable, and cheaper: use the CTS **case list as a specification** and write
+tests against it, and use the software ICD as a same-machine differential
+reference. Note the wider hazard this uncovered — **glslang and SPIRV-Tools have
+open big-endian bugs too** (glslang #4145, #2797; SPIRV-Tools #5595; Debian
+#1137720 shows Mesa FTBFS on ppc64 with `nepOs.LC` = byte-reversed `"OpenCL.s"`).
+Those are build dependencies, not just test tools. The graphics suite that does
+have real BE coverage is **piglit**, which Debian builds on s390x/powerpc/ppc64.
+
+**Before any porting work at all**, run the 30-line experiment: confirm C++
+exception unwinding works on real AmigaOS 4 hardware. Everything above is moot
+if it does not.
 
 ## 5. Where the future API layers sit — the Gallium question
 
