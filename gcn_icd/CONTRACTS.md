@@ -1,10 +1,17 @@
-# igpu_vk contracts — single source of truth
+# gcn_vk contracts — single source of truth
 
 These are the interfaces between the parallel work lanes (ICD core, compiler,
 PM4 emission, GCNgfx backend). **Changes go ONLY through the coordinator.**
 If your lane discovers a contract is wrong or incomplete: STOP, write up the
 gap (what you needed, why the contract can't express it), and report. Do not
 edit this file or work around it by reaching into another lane's directory.
+
+Naming: this library was called `igpu_vk` / `igpu_icd/` until 2026-07-26.
+Dated documents in GCNgfx and P96_Replacement still use the old path; it is the
+same component. (`igpu` was read from the `IGpu` interface, but everywhere else
+in the industry it means *integrated* GPU — which is the opposite of the
+discrete cards this drives.) The P96 seam validator `tests/igpu_vk` KEEPS its
+name: it validates the IGpu API surface, not this ICD.
 
 Status: v0.2 (2026-07-17), plus one requirement admitted 2026-07-26: **§4,
 all-GCN support and the feature level we may report**. It binds every lane from
@@ -155,7 +162,7 @@ labour is RADV's, and it is binding on all lanes:
 
 ## 4. Multi-generation GCN support and reported feature level
 
-**Requirement (admitted 2026-07-26, v0.3 item).** `igpu_vk` targets **all GCN
+**Requirement (admitted 2026-07-26, v0.3 item).** `gcn_vk` targets **all GCN
 parts**, not just the gfx803 first target. At device enumeration it must
 establish which ASIC it is on and report a Vulkan `apiVersion`, limits, features
 and extension list it can actually honour **on that ASIC**. No lane may emit a
@@ -207,7 +214,7 @@ Consequences per lane:
   generation.
 
 Note for the loader: the software ICD reports `VK_API_VERSION_1_3` per physical
-device, so a GCN part on which `igpu_vk` reports less is a legitimate reason for
+device, so a GCN part on which `gcn_vk` reports less is a legitimate reason for
 the loader to prefer another ICD for an application that demands more. Confirm
 the loader actually selects on `apiVersion` before relying on that.
 

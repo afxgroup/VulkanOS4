@@ -1,6 +1,6 @@
 # SPIR-V → GCN3 compiler (Agent B lane)
 
-This directory is the runtime shader compiler for `igpu_vk.library`.
+This directory is the runtime shader compiler for `gcn_vk.library`.
 **Read `../CONTRACTS.md` §1 first — the `GcnShaderBlob` ABI is your output
 contract and you do not change it unilaterally.**
 
@@ -56,6 +56,6 @@ SPIR-V words + entry point + stage  →  GcnShaderBlob (gfx803 code + metadata)
 
 ## Do not touch
 
-Anything outside `igpu_icd/compiler/`. `GCNgfx/` and `software_icd/` are
+Anything outside `gcn_icd/compiler/`. `GCNgfx/` and `software_icd/` are
 read-only references. Gaps in the blob ABI → stop and report to the
 coordinator; do not extend `GcnShaderBlob` yourself.

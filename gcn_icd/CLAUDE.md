@@ -1,8 +1,8 @@
-# igpu_vk.library — ICD core (Agent A lane)
+# gcn_vk.library — ICD core (Agent A lane)
 
-This directory is the future `igpu_vk.library`: the hardware Vulkan ICD that
+This directory is the future `gcn_vk.library`: the hardware Vulkan ICD that
 renders through gpu.library/IGpu. Multi-agent rules: this file governs the
-whole `igpu_icd/` tree; `compiler/` and `pm4/` have their own CLAUDE.md and
+whole `gcn_icd/` tree; `compiler/` and `pm4/` have their own CLAUDE.md and
 belong to other agents. **Read `CONTRACTS.md` before writing any code.**
 
 ## Your job (Agent A)
@@ -37,8 +37,8 @@ call sequence):
    until the compiler + pm4 lanes integrate. Structure command-buffer
    recording so the execution backend (CPU interpret vs PM4 emit) is a
    pluggable seam — pm4/ plugs in behind it later.
-6. Manifest (`igpu_vk.json`) + Makefile.cross following `software_icd/`'s
-   pattern-rule style; wire into the top-level Makefile as `make igpu-icd`.
+6. Manifest (`gcn_vk.json`) + Makefile.cross following `software_icd/`'s
+   pattern-rule style; wire into the top-level Makefile as `make gcn-icd`.
 
 ## Test target
 
@@ -56,7 +56,7 @@ path is unaffected.
 
 ## Style / platform notes
 
-- Mirror `software_icd/src/` file layout (`igvk_instance.c`, `igvk_memory.c`,
+- Mirror `software_icd/src/` file layout (`gcnvk_instance.c`, `gcnvk_memory.c`,
   …); `swvk_internal.h` is the object-model reference.
 - Userspace disk-loaded library: clib4/newlib allowed (the CRT-free
   discipline applies to gcngfx, NOT here).
