@@ -13,10 +13,29 @@ in the industry it means *integrated* GPU — which is the opposite of the
 discrete cards this drives.) The P96 seam validator `tests/igpu_vk` KEEPS its
 name: it validates the IGpu API surface, not this ICD.
 
-Status: v0.2 (2026-07-17), plus one requirement admitted 2026-07-26: **§4,
-all-GCN support and the feature level we may report**. It binds every lane from
-first commit — read it before choosing where a gfx8 constant lives. (Old §4,
-shared logistics, is now §5; nothing referenced it by number.)
+Status: **v0.3 (2026-07-26)**. Three of the four items scoped for v0.3 have
+landed:
+
+1. **§2's draw-less rationale RETRACTED** — the "armed CE deadlocks" mechanism
+   is false (GCNgfx `docs/GFX_HANDOFF_25Jul2026.md` §1) and the defect it
+   guarded is cleared by a 10-boot soak.
+2. **§2 now spells a barrier-only submit as the ratified FENCE-ONLY SUBMIT**,
+   with an interim note because gcngfx does not accept it yet.
+3. **§4 all-GCN support and the feature level we may report** — binds every
+   lane from first commit; read it before choosing where a gfx8 constant lives.
+   §1's constants are now explicitly level-scoped.
+
+**Deferred to v0.4: sync→async render submission.** "Synchronous v1" is
+contract-visible text (below, and in §2's fencing rule), so it cannot change
+silently — but the shape depends on a decision in another repo: whether
+gpu.library adopts per-engine fence contexts (`(backend, context, seq)`, the
+`dma_fence` shape) or keeps one seq space per backend and reconciles engines
+with GCNgfx `docs/ASYNC_SUBMIT_PROPOSAL.md` §8's min-over-busy-engines.
+Writing v0.4 before that resolves means writing it twice. Lanes may assume
+synchronous submit until v0.4 says otherwise.
+
+(Old §4, shared logistics, became §5 on 2026-07-26; nothing referenced it by
+number.)
 
 §2's transport is IMPLEMENTED and deployed:
 gcngfx executes `GPU_QUEUE_RENDER` payloads on the CP gfx ring
@@ -93,9 +112,13 @@ typedef struct {
 } GcnShaderBlob;
 ```
 
-Hard constraints the compiler must honour (HW-verified findings):
-- **16 user SGPRs per stage max** (GFX8 cap, D3 finding). Beyond that,
-  emit `GCN_USGPR_DTAB_VA` + `s_load_dwordx8/x4` from the table.
+Hard constraints the compiler must honour (HW-verified findings). **Every
+constant here was measured on gfx803 and is therefore LEVEL-SCOPED** — see §4;
+none may be applied to another GCN generation without re-verification.
+- **16 user SGPRs per stage max** — a **GFX8** cap (D3 finding), not a
+  universal one. Beyond that, emit `GCN_USGPR_DTAB_VA` + `s_load_dwordx8/x4`
+  from the table. The limit itself must come from the per-level table, not a
+  `#define`.
 - **Big-endian sampled component order**: `IMAGE_SAMPLE` returns
   (X,Y,Z,W) = (A,R,G,B) on this platform (D3 finding). The compiler's
   swizzle lowering must account for it.
@@ -118,17 +141,40 @@ Hard constraints the compiler must honour (HW-verified findings):
 - **Fencing is the backend's job**: gcngfx appends the
   EVENT_WRITE_EOP + CACHE_FLUSH_AND_INV_TS done-fence (D1 finding) and
   maps it to the returned GpuFence. The ICD never emits EOP packets.
-- **A draw-less render submit is a NO-OP that still retires its fence.**
-  A payload containing no DRAW_*/DISPATCH_* packet renders nothing, and
-  because state is per-submit (above), a state-only or empty/NOP payload
-  has no persistent effect either. gcngfx does NOT execute it on the gfx
-  ring (an armed CE deadlocks on a draw-less stream — CE_WAITING_ON_DE,
-  HW-proven) and simply retires it on the shared fence: the returned
-  GpuFence/timeline signals normally. So a Vulkan fence-only or
-  barrier-only `vkQueueSubmit` is safe and correct. Corollary: never rely
-  on a side-effecting non-render packet (WRITE_DATA/COPY_DATA/EVENT) in a
-  draw-less render payload — it will be skipped; route copies and events
-  through the transfer queue.
+- **A barrier-only or fence-only `vkQueueSubmit` is spelled as a FENCE-ONLY
+  SUBMIT — not as an empty payload.** `GPU_SubmitA(queue, NULL, 0, tags)`
+  means "no work, just this backend's next fence"; it is ratified in the core
+  (P96 `dd3a6fe`) and is the portable form. The ICD must NOT express this by
+  handing the backend a payload it has to recognise as work-free: an API with
+  deliberately opaque payloads cannot ask the other side to introspect them,
+  which is the same reason amdgpu never parses indirect buffers.
+  The core also rejects `payload == NULL` with `length != 0` as
+  `GPUERR_BADARGS` on every backend's behalf.
+- **INTERIM (2026-07-26), and it WILL bite Lane A on hardware**: gcngfx does
+  not accept the ratified form yet — `gcn_gfx_submit_payload` bails on
+  `payload_le == NULL` and `gcn_Submit` returns `GPUERR_TIMEOUT`. vgfx and
+  null accept it. Until gcngfx is fixed, the ICD needs a per-backend fallback:
+  a draw-less PM4 payload still works there, because gcngfx skips such
+  payloads off the gfx ring and retires them on the shared fence. Treat that
+  as a workaround with an expiry date, isolated behind one helper, not as the
+  contract.
+- **Retracted rationale, recorded because it was load-bearing for weeks.**
+  This section previously justified the draw-less skip as "an armed CE
+  deadlocks on a draw-less stream — CE_WAITING_ON_DE, HW-proven". **That
+  mechanism is false.** `CP_STAT` after the preamble is `0x00000000` (the CE
+  is not armed; our own "= CE armed" log text was a hardcoded string, not a
+  decode), `CP_STAT=0x94008200` is a BUSY reading and does not encode the CE
+  wait at all, and bit 12 `CE_WAITING_ON_DE_COUNTER` has been observed clear
+  while bit 13 `…_UNDERFLOW` was set. See GCNgfx
+  `docs/GFX_HANDOFF_25Jul2026.md` §1. The underflow that did occur traced to
+  a zero-filled ring plus unpadded commits and to a boot scratch probe, all
+  fixed by other means; a 10-boot cold soak
+  (`bench-results/drawless_gate_soak_x5000_26Jul2026.md`) shows draw-less
+  payloads execute and retire harmlessly. Retiring gcngfx's gate is expected
+  and would make the interim above unnecessary.
+- Corollary that survives regardless: never rely on a side-effecting
+  non-render packet (WRITE_DATA/COPY_DATA/EVENT) in a draw-less render
+  payload — route copies and events through the transfer queue.
 - All GPU addresses inside the stream (RT surfaces, shader PGM_LO,
   descriptor tables, vertex/index V#s) are **GPU VAs of IGpu buffers**,
   obtained via the **RATIFIED v6 surface** (accepted + implemented
