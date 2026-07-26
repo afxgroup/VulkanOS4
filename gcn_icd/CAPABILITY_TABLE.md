@@ -3,11 +3,18 @@
 What the ICD reports at enumeration, and where each number comes from.
 CONTRACTS §4 mandates this table; this is its content.
 
-**Status.** Sections 1, 4, 5 and 6 are findings — read them as evidence. **§2
-(the reported `apiVersion`) and §3 (fallback advertising) are PROPOSED and need
-coordinator ratification into CONTRACTS §4** before Lane A commits to them.
-Identification (`GPUTAG_GfxLevel`/`GfxRevision`) is already settled in
-CONTRACTS §4 and is not repeated here.
+**Status.** Sections 1, 5 and 6 are findings — read them as evidence.
+**§2, §3 and §4 were RATIFIED into `CONTRACTS.md` §4a–4d on 2026-07-26** and are
+now binding; the text here is the reasoning behind them, and the contract wins
+on any discrepancy. Identification (`GPUTAG_GfxLevel`/`GfxRevision`) is settled
+in CONTRACTS §4 and not repeated here.
+
+Ratified: report `VK_API_VERSION_1_0` on every gfx level and raise by extension
+(§4a); never advertise on CPU-fallback strength (§4b); the ICD supplies image
+limits the backend leaves at 0 (§4c); applications must query per device,
+because the loader does not select on `apiVersion` (§4d). Making the loader
+`apiVersion`-aware was deliberately NOT ratified — it changes a shipped
+component both other ICDs depend on and is its own decision.
 
 ---
 

@@ -264,13 +264,139 @@ nothing. What we may advertise is
 
 ```
 apiVersion = min( what compiler + PM4 emission implement for this gfx_level,
-                  what the backend implements for this ASIC )
+                  what the backend implements for this ASIC,
+                  what OUR OWN HEADERS AND LOADER CAN EXPRESS )    <- RATIFIED 2026-07-26
 ```
 
 Advertise low and raise it as lanes land. **Never advertise a version or feature
 bit the emitter cannot honour for the running level** — an application acts on
 those. A pipeline dropping to the CPU-shade fallback is a performance outcome
 and is fine; a false capability is not.
+
+**The third term, ratified 2026-07-26.** `include/vulkan/vulkan_core.h` is a
+hand-trimmed 2578-line subset carrying 146 `PFN_vk` declarations against a real
+1.3's ~400, and it contains **none** of `VkPhysicalDeviceVulkan11Features` /
+`12Features` / `13Features` / `VkPhysicalDeviceSubgroupProperties`. A 1.1+
+device must answer `vkGetPhysicalDeviceFeatures2` for those structs; there is no
+struct and no sType to match. So the header alone forecloses 1.1, independently
+of any lane. A version claim must clear all three bounds, not two.
+
+### 4a. RATIFIED 2026-07-26 — report `VK_API_VERSION_1_0` on every gfx level
+
+The gfx level does not enter into it. Hardware blockers are **empty**: RADV
+reports 1.3 on GFX6/GFX7, and the only reason it caps them below 1.4 is
+`indexTypeUint8`, a 1.4 requirement. Every 1.3-mandatory feature is `true` on
+gfx6 in RADV. The blockers are our unimplemented lanes plus the header bound
+above.
+
+**Raise by extension, not by version.** Nearly every promoted feature ships on a
+1.0 driver given `VK_KHR_get_physical_device_properties2` —
+`VK_KHR_{timeline_semaphore, synchronization2, dynamic_rendering,
+buffer_device_address, multiview, create_renderpass2, …}` carry no core-version
+dependency. Implement timeline semaphores ⇒ advertise
+`VK_KHR_timeline_semaphore` on a 1.0 device; do **not** claim 1.2. Only
+`shader_subgroup_extended_types`, `maintenance4` and `spirv_1_4` hard-require
+1.1.
+
+Two facts that make the conservative claim more strongly indicated, not less:
+
+- **There is no external oracle and never will be.** dEQP-VK cannot be ported
+  (`docs/LINUX_ANALOGY.md` §4 — `#error "Big-endian not supported"` inside
+  `mapVkFormat()`), so `dEQP-VK.api.info.device_mandatory_features`, the test
+  that mechanically enforces the mandatory-feature rules against whatever
+  version you advertise, will never run here. **This contract is the only thing
+  between an inflated claim and a shipped lie.**
+- **The in-repo precedent is to over-claim, and it stops here.**
+  `software_vk.library` reports 1.3 while reporting `robustBufferAccess = FALSE`
+  (mandatory at 1.0) and supporting four formats; `ogles2_vk.library` reports
+  1.3 with zero feature bits true. Both are non-conformant even as 1.0
+  implementations. `gcn_vk` reporting 1.0 makes it the only honest device in the
+  stack — that is the intended outcome, not a regression.
+
+It costs nothing: all 24 examples set `VkApplicationInfo.apiVersion` to 1.3, and
+**none** compares `props.apiVersion` against anything.
+
+### 4b. RATIFIED 2026-07-26 — never advertise on the strength of the CPU fallback
+
+Advertise strictly what the PM4 + compiler path can honour for the running
+level. The fallback is a **reliability** mechanism for pipelines already inside
+the advertised set — never a capability-widening one.
+
+Reasons, in order of force:
+
+1. **The fallback is the software ICD's interpreter**, which advertises every
+   feature bit false, `maxImageDimension2D = 4096`, one sample count and four
+   formats. It is a *narrower* set of a different shape, not a superset. Any
+   feature the PM4 path cannot do, it cannot do either — so the interesting
+   version of this trade-off is not currently reachable.
+2. **A feature bit is a promise with no escape hatch.**
+   `vkCreateGraphicsPipelines` has no legal return meaning "I cannot do this",
+   so advertising commits us to succeeding at *every* pipeline using it,
+   forever.
+3. **Mixed-path composition is an unproven correctness question**, not merely a
+   speed one: a per-pipeline fallback puts GPU draws and CPU draws into the same
+   render target, requiring it to be CPU-mappable and correctly de-tiled and
+   re-tiled, decided at pipeline-creation time and possibly after the image was
+   created tiled.
+4. **No conformance suite will ever check an emulation here** (see 4a).
+
+Signal cost through the three channels Vulkan actually has:
+`deviceType = DISCRETE_GPU` only while PM4 is the normal path (report `CPU` if
+everything routes to the interpreter, which is lavapipe's whole honesty story);
+`deviceName` carrying the state Mesa-style; one debug line per fallback naming
+the pipeline and the compiler's refusal reason; plus a tunable whose `off`
+setting refuses the fallback outright so CI can answer "did this actually run on
+the GPU". Default: fallback **on but loud**.
+
+**The bar for ever revisiting this**, so it is a decision and not a drift: (i)
+the feature is shader-behaviour, not fixed-function or format state; (ii) a test
+exercises it *through* the fallback; (iii) mixed GPU/CPU output into one render
+target is proven byte-correct.
+
+### 4c. RATIFIED 2026-07-26 — the ICD supplies image limits the backend leaves at 0
+
+`0` from a declaration tag means **undeclared**, never "none" — and for
+*capabilities* the rule is to under-report and enumerate nothing
+(`GPUCAP_DEVICEADDRESS`, `GfxLevel`). **Image limits are the one exception**,
+because §3 already gives image tiling, layout and
+`vkGetImageMemoryRequirements` maths to the ICD: the limit is the ICD's fact to
+know, and the backend's declaration is a cross-check, not the source.
+
+Three tiers:
+
+1. Backend declares non-zero → use it, and clamp our own value **down** to it,
+   never up.
+2. Backend declares 0 → use the ICD's own per-level value **and log that we
+   did**. (gcngfx deliberately declares no `GPUTAG_MaxTextureDim`: its image
+   path cannot yet enforce a limit, and declaring one would advertise a
+   guarantee nothing upholds.)
+3. Neither knows → report the Vulkan **spec floor**, never 0. A zero limit is
+   not conservative: `ogles2_icd/src/ogles2vk_main.c:302-312` records VMA
+   computing `min(blockSize, heapSize) % bufferImageGranularity` and dividing by
+   zero, so `vmaCreateImage` failed before `vkAllocateMemory` was ever called.
+
+### 4d. The loader does NOT select on `apiVersion` — accepted, not fixed
+
+This section previously asked that someone confirm it. **Confirmed, negative.**
+`loader/src/loader_icd.c:408-444` sorts by prefs priority and then "software
+goes last" via `strstr(libraryPath, "software")` — `gcn_vk.library` does not
+match that string, so it sorts **ahead** of `software_vk`.
+`loader/src/loader_dispatch.c:66-90` then takes the first ICD whose
+`vkCreateInstance` succeeds, sets `activeICD`, and overwrites `VulkanIFace`
+wholesale. `apiVersion` appears nowhere in selection, and physical devices are
+**not** aggregated across ICDs.
+
+**Ratified consequence: applications must query per device.** An honest 1.0
+claim from `gcn_vk` therefore gets no automatic fallback to `software_vk`, and
+that is accepted. The honesty argument stands on its own: an application that
+queries and adapts is served correctly, and one that assumes fails fast rather
+than rendering corrupt output.
+
+**NOT ratified, and deliberately left open:** making the loader `apiVersion`-
+aware. It changes a shipped component that both existing ICDs depend on, and its
+selection heuristic is entangled with the VulkanPrefs priority mechanism. That
+is its own decision with its own testing, not a rider on this one. Until it is
+taken, no lane may assume the loader will route around a low claim.
 
 **Identification — LANDED 2026-07-26, the stopgap is retired.** The backend
 declares its generation at registration and the ICD reads it back. **Two tags,
