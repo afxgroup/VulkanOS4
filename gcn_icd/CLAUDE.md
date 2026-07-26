@@ -46,6 +46,14 @@ its QEMU-only checks as unproven on gcngfx until someone runs them there.
    this. **Caveat**: `GPU_WaitFence` delegates its timeout to the backend and
    that path is still UNTESTED — both in-tree backends retire synchronously,
    so nothing ever stays pending. Assume nothing about it; test it.
+   **Know the failure signature before you meet it** (CONTRACTS status, v0.4):
+   a backend that OVER-reports its retirement watermark corrupts **silently** —
+   the timeline advances early, so `vkWaitSemaphores`/`vkWaitForFences` return
+   while the GPU is still writing. There is no error path and no timeout. So if
+   a wait ever returns too soon and the pixels are wrong, suspect the watermark,
+   not your fence bookkeeping. Nothing about engines is visible above IGpu —
+   `GpuFence` stays an opaque `int64` — so this needs no ICD change, only the
+   knowledge.
 4. **WSI**: windowed present like the software ICD; fullscreen/exclusive via
    `GPU_AcquireDisplayA(GPUTAG_SwapchainDepth)` + `GPU_NextDisplayBufferA` +
    `GPU_PresentA` + `GPU_ReleaseDisplay`. NB (2026-07-19): the X5000 block
@@ -82,9 +90,17 @@ its QEMU-only checks as unproven on gcngfx until someone runs them there.
    by `strstr`), so a low claim gets no automatic fallback to `software_vk`.
 8. **Barrier-only / fence-only submits**: use the ratified fence-only submit,
    `GPU_SubmitA(queue, NULL, 0, tags)` — NOT an empty PM4 payload the backend
-   has to recognise as work-free. Read CONTRACTS.md §2 first: gcngfx does not
-   accept the ratified form yet (`GPUERR_BADARGS`), so you need a per-backend
-   fallback behind ONE helper, with an expiry date. Numbered last because it
+   has to recognise as work-free. Read CONTRACTS.md §2 first.
+   **The interim is narrower than it first looks: gcngfx rejects the ratified
+   form on `GPU_QUEUE_RENDER` ONLY** (`GPUERR_BADARGS`). Every other queue there
+   has conformed since 2026-07-13, so **transfer and present submits need no
+   workaround at all** — scope the fallback helper to the render queue rather
+   than wrapping every submit. Do NOT rely on the old explanation of why the
+   draw-less fallback works: "gcngfx skips such payloads off the gfx ring" holds
+   only when the engine is IDLE; when it is busy the path deliberately falls
+   back to a real ring submit. Both arms return a valid seq so the workaround
+   functions, but debugging it against that sentence means chasing a mechanism
+   that is not running. Numbered last because it
    was added on 2026-07-26; items 1–6 keep their numbers, which other documents
    cite (§4 = WSI).
 
