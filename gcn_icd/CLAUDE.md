@@ -59,7 +59,28 @@ its QEMU-only checks as unproven on gcngfx until someone runs them there.
    pluggable seam — pm4/ plugs in behind it later.
 6. Manifest (`gcn_vk.json`) + Makefile.cross following `software_icd/`'s
    pattern-rule style; wire into the top-level Makefile as `make gcn-icd`.
-7. **Barrier-only / fence-only submits**: use the ratified fence-only submit,
+7. **Enumeration + capability reporting**: **read `CAPABILITY_TABLE.md` before
+   writing `vkGetPhysicalDevice*`.** It specifies what the per-level table
+   holds, and its findings are not what you would guess. Three that will bite:
+   - **`QueueMask` is structurally useless** — `P96 src/lib/gpu_api.c:466-469`
+     hardcodes `PRESENT|RENDER|COMPUTE` for *every* backend regardless of what
+     it registered. Never derive `VkQueueFamilyProperties` from it. Report one
+     graphics+transfer family and grow on tested evidence only.
+   - **`maxImageDimension2D` is 8192, not 16384**, until tiled layouts exist:
+     T# WIDTH/HEIGHT are 14 bits (so 16384) but **T# PITCH is 13 bits**
+     (`GCNgfx/src/gfx/gcn_gfx.c:753`), which caps a *linear* image at 8192.
+   - **Gate enumeration on CAPABILITY, never on gfx level.** gcngfx binds the
+     Pitcairn PCI ids and will report `GfxLevel = 6`, but `gfx_v8.c:1247` is
+     `if (family != POLARIS) return FALSE` and GMC/SDMA/DCE6 are the same. A
+     gfx6 board answers 6 while being undriveable.
+   The proposed answer on reported version is **`VK_API_VERSION_1_0` on every
+   level**, raised by extension rather than by version — hardware is not the
+   blocker (RADV does 1.3 on GFX6); our lanes and our trimmed
+   `vulkan_core.h` are. Not yet ratified into CONTRACTS §4.
+   NB the loader does **not** select on `apiVersion`
+   (`loader/src/loader_icd.c:408-444` sorts by prefs then "software goes last"
+   by `strstr`), so a low claim gets no automatic fallback to `software_vk`.
+8. **Barrier-only / fence-only submits**: use the ratified fence-only submit,
    `GPU_SubmitA(queue, NULL, 0, tags)` — NOT an empty PM4 payload the backend
    has to recognise as work-free. Read CONTRACTS.md §2 first: gcngfx does not
    accept the ratified form yet (`GPUERR_BADARGS`), so you need a per-backend
