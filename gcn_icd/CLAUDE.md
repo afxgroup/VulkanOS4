@@ -8,9 +8,15 @@ belong to other agents. **Read `CONTRACTS.md` before writing any code.**
 ## Your job (Agent A)
 
 Build the ICD skeleton — the productionised form of
-`P96_Replacement/tests/igpu_vk/igpu_vk_validate.c` (15/15 checks passed
-against live vgfx; that file is your proven starting point for every IGpu
-call sequence):
+`P96_Replacement/tests/igpu_vk/igpu_vk_validate.c`. That file is your proven
+starting point for every IGpu call sequence.
+
+**Its status, corrected 2026-07-26** (this brief previously said "15/15 checks
+passed against live vgfx", which is now wrong twice over): the validator was
+rewritten on 2026-07-25 into five stages and currently reports **39/39 on
+QEMU against vgfx**. The old 15-check version is what passed on the **X5000**
+on 2026-07-19. **The expanded validator has never been run on hardware.** Treat
+its QEMU-only checks as unproven on gcngfx until someone runs them there.
 
 1. **Entry points / dispatch**: the loader contract is the same as the other
    two ICDs. Keep the `DISPATCH` and `RAW` tables in lockstep — the v1.3
@@ -23,9 +29,23 @@ call sequence):
    assume unified vs discrete (validator finding #1).
    `VkPhysicalDeviceMemoryProperties` from `GpuBackendCaps.MemoryDomains` +
    `GPU_QueryMemoryA`; coherence per the CONTRACTS.md §3 convention.
+   **NB (2026-07-26)**: `MemoryDomains` only became real on 2026-07-25 (P96
+   `8547b7f`) — backends now declare it via `GPUTAG_MemoryDomains` at
+   registration, and it read 0 for everyone before that. vgfx declares
+   `VRAM|SYSTEM` (0xa); **gcngfx declares NOTHING yet**, so on the actual
+   target hardware you will read 0. Handle 0 as "undeclared" rather than
+   "no domains", and report the gap rather than inventing a memory type.
 3. **Sync**: VkFence over `GpuFence` (`GPU_TestFence`/`GPU_WaitFence`);
    timeline VkSemaphore over `GPU_CreateTimelineA`/`GPU_WaitTimelineA`/
    `GPU_QueryTimelineA`; binary semaphores ICD-internal.
+   **Timeout semantics matter here and were broken until 2026-07-25** (P96
+   `b842d52`, found by validator stage 2): `GPU_WaitTimelineA` ignored its
+   timeout entirely and slept forever. Now explicit — `0` = poll,
+   `1..0xFFFFFFFE` = real microsecond bound, `GPU_TIMEOUT_INFINITE` = block.
+   `vkWaitSemaphores`/`vkWaitForFences` MUST return `VK_TIMEOUT`, so rely on
+   this. **Caveat**: `GPU_WaitFence` delegates its timeout to the backend and
+   that path is still UNTESTED — both in-tree backends retire synchronously,
+   so nothing ever stays pending. Assume nothing about it; test it.
 4. **WSI**: windowed present like the software ICD; fullscreen/exclusive via
    `GPU_AcquireDisplayA(GPUTAG_SwapchainDepth)` + `GPU_NextDisplayBufferA` +
    `GPU_PresentA` + `GPU_ReleaseDisplay`. NB (2026-07-19): the X5000 block
@@ -39,13 +59,33 @@ call sequence):
    pluggable seam — pm4/ plugs in behind it later.
 6. Manifest (`gcn_vk.json`) + Makefile.cross following `software_icd/`'s
    pattern-rule style; wire into the top-level Makefile as `make gcn-icd`.
+7. **Barrier-only / fence-only submits**: use the ratified fence-only submit,
+   `GPU_SubmitA(queue, NULL, 0, tags)` — NOT an empty PM4 payload the backend
+   has to recognise as work-free. Read CONTRACTS.md §2 first: gcngfx does not
+   accept the ratified form yet (`GPUERR_TIMEOUT`), so you need a per-backend
+   fallback behind ONE helper, with an expiry date. Numbered last because it
+   was added on 2026-07-26; items 1–6 keep their numbers, which other documents
+   cite (§4 = WSI).
 
 ## Test target
 
-qemu-gpulib (vgfx backend). Known backend gap, not your bug: vgfx is
-single-scanout, so a depth-2 exclusive swapchain gets every other Present
-refused (`GPUERR_BADARGS`) — the validator write-up documents it. Windowed
-path is unaffected.
+qemu-gpulib (vgfx backend).
+
+**The single-scanout limitation this brief used to warn about is FIXED** (vgfx
+`5229440`, 2026-07-25): vgfx now does a real depth-N swapchain with per-image
+resources and a per-image flip, and the validator reports 2/2 swapchain images
+and 30/30 presents. Do not design around every-other-Present refusals. Per
+P96 `dd3a6fe` the flip *mechanism* is now proven on both backends — gcngfx
+address-only vblank-latched on hardware, vgfx `SET_SCANOUT` on QEMU — so what
+remains hardware-gated is real vsync *timing*, not the flip.
+
+Historical note worth knowing before you trust a green run: between 11-Jul and
+25-Jul a stage-3 swapchain acquire on vgfx silently **corrupted the live
+desktop** (it freed the P96 board pool out from under the shim, and afterwards
+`vgb_Present` returned `GPUERR_OK` forever while displaying nothing). The
+validator's own "display released (desktop restored)" line was believed twice
+and proved nothing — it printed once the RELEASE hook returned. A moving
+present counter proves presents happen, not that pixels are visible.
 
 ## Do not touch
 
