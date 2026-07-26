@@ -146,13 +146,20 @@ none may be applied to another GCN generation without re-verification.
   means "no work, just this backend's next fence"; it is ratified in the core
   (P96 `dd3a6fe`) and is the portable form. The ICD must NOT express this by
   handing the backend a payload it has to recognise as work-free: an API with
-  deliberately opaque payloads cannot ask the other side to introspect them,
-  which is the same reason amdgpu never parses indirect buffers.
+  deliberately opaque payloads should not require the other side to introspect
+  them. (An earlier draft justified this as "the same reason amdgpu never parses
+  indirect buffers". **That absolute is false** — checked against
+  `refs/linux-4.14`: amdgpu's GFX/compute/SDMA rings genuinely do not parse, but
+  six UVD/VCE rings bind a real `parse_cs` that walks the stream and rejects an
+  IB lacking a required packet type, and Linux's `radeon` driver parses every
+  packet on SI/CIK's VM path. The argument here stands on its own terms — an
+  explicit verb beats introspection — not on an appeal to amdgpu.)
   The core also rejects `payload == NULL` with `length != 0` as
   `GPUERR_BADARGS` on every backend's behalf.
 - **INTERIM (2026-07-26), and it WILL bite Lane A on hardware**: gcngfx does
   not accept the ratified form yet — `gcn_gfx_submit_payload` bails on
-  `payload_le == NULL` and `gcn_Submit` returns `GPUERR_TIMEOUT`. vgfx and
+  `payload_le == NULL` and `gcn_Submit` returns **`GPUERR_BADARGS`** (it
+  returned `GPUERR_TIMEOUT` before GCNgfx `fc1c84d`). vgfx and
   null accept it. Until gcngfx is fixed, the ICD needs a per-backend fallback:
   a draw-less PM4 payload still works there, because gcngfx skips such
   payloads off the gfx ring and retires them on the shared fence. Treat that
@@ -250,6 +257,25 @@ Consequences per lane:
   start**; do not inline gfx8 constants at call sites. `testdata/golden_pm4/` is
   gfx803-only — other levels need their own captures from real cards, and byte
   parity is claimed per level, never across.
+
+**MEASURED 2026-07-26** (`compiler/GCN_LEVEL_DELTAS.md`, harness in
+`compiler/isa_oracle/`, ~2900 differential assemblies; toolchain-verified and
+**hardware-unverified** — the fleet has only gfx803):
+
+- There are **THREE encoding levels, not four**: gfx6 and gfx7 are
+  byte-identical for all 13 reference shaders and ~190 instruction probes, so
+  they share one table; the level flag between them gates only FLAT addressing
+  and the SMEM literal-offset escape. gfx8 and gfx9 are then separate.
+- **All image/MIMG encoding, and the descriptor operand form (T# = 8 SGPRs,
+  S# = 4 SGPRs), are identical across gfx6→gfx9** — including every modifier
+  bit position. The most portable area of the ISA is the one the textured-quad
+  subset needs most.
+- **gfx90a (CDNA2) is EXCLUDED from this contract.** It rejects every `exp`
+  form and requires 64-bit-aligned VGPR tuples, so it cannot run a graphics
+  pipeline. Being a gfx9 target is not sufficient grounds to enumerate a device.
+- The level table must therefore be keyed on more than generation: image `d16`
+  is gfx810-only *within* gfx8, and `v_fmac_f32` is gfx906/908-only within
+  gfx9. §7 of `GCN_LEVEL_DELTAS.md` lists the minimum table contents.
 - **Lane A**: one **per-gfx-level capability table** drives
   `VkPhysicalDeviceProperties.apiVersion`, limits, features and the extension
   list, consulted at enumeration. No ad-hoc per-ASIC conditionals scattered

@@ -1,0 +1,253 @@
+############ 0. toolchain
+Debian clang version 21.1.8 (++20251221033036+2078da43e25a-1~exp1~20251221153213.50)
+Target: x86_64-pc-linux-gnu
+############ 0b. targets recognised (mach flag; 0x0 == NOT recognised)
+gfx600     0x20, gfx600
+gfx601     0x21, gfx601
+gfx602     0x3A, gfx602
+gfx700     0x22, gfx700
+gfx701     0x23, gfx701
+gfx702     0x24, gfx702
+gfx703     0x25, gfx703
+gfx704     0x26, gfx704
+gfx705     0x3B, gfx705
+gfx801     0x128, gfx801, xnack
+gfx802     0x29, gfx802
+gfx803     0x2A, gfx803
+gfx805     0x3C, gfx805
+gfx810     0x12B, gfx810, xnack
+gfx900     0x12C, gfx900, xnack
+gfx902     0x12D, gfx902, xnack
+gfx904     0x12E, gfx904, xnack
+gfx906     0x32F, gfx906, xnack, sramecc
+gfx908     0x330, gfx908, xnack, sramecc
+gfx909     0x131, gfx909, xnack
+gfx90a     0x33F, gfx90a, xnack, sramecc
+gfx90c     0x132, gfx90c, xnack
+BOGUS999   0x0
+############ 1. real-shader differential assembly
+     13 FAIL
+    273 OK
+ps_blit           40    600,601,602,700,701,702,703,704,705
+ps_blit           40    801,802,803,805,810,900,902,904,906,908,909,90c
+ps_blit_rect      40    600,601,602,700,701,702,703,704,705
+ps_blit_rect      40    801,802,803,805,810,900,902,904,906,908,909,90c
+ps_comp2          116   600,601,602,700,701,702,703,704,705
+ps_comp2          132   801,802,803,805,810
+ps_comp2          132   900,902,904,906,908,909,90c
+ps_comp2_rect     116   600,601,602,700,701,702,703,704,705
+ps_comp2_rect     132   801,802,803,805,810
+ps_comp2_rect     132   900,902,904,906,908,909,90c
+ps_comp2_rect_a   120   600,601,602,700,701,702,703,704,705
+ps_comp2_rect_a   136   801,802,803,805,810
+ps_comp2_rect_a   136   900,902,904,906,908,909,90c
+ps_comp_sw        104   801,802,803,805,810,900,902,904,906,908,909,90c
+ps_comp_sw        96    600,601,602,700,701,702,703,704,705
+ps_sample         32    600,601,602,700,701,702,703,704,705
+ps_sample         32    801,802,803,805,810,900,902,904,906,908,909,90c
+ps_sample_fp16    40    600,601,602,700,701,702,703,704,705
+ps_sample_fp16    48    801,802,803,805,810,900,902,904,906,908,909,90c
+ps_scale          40    600,601,602,700,701,702,703,704,705
+ps_scale          40    801,802,803,805,810,900,902,904,906,908,909,90c
+ps_solid          28    600,601,602,700,701,702,703,704,705
+ps_solid          28    801,802,803,805,810,900,902,904,906,908,909,90c
+ps_vtx            64    600,601,602,700,701,702,703,704,705
+ps_vtx            64    801,802,803,805,810,900,902,904,906,908,909,90c
+vs_fullscreen     52    600,601,602,700,701,702,703,704,705
+vs_fullscreen     52    801,802,803,805,810,900,902,904,906,908,909,90c
+vs_vtx            72    600,601,602,700,701,702,703,704,705
+vs_vtx            72    801,802,803,805,810,900,902,904,906,908,909,90c
+############ 2. one-instruction probes + per-generation deltas
+120 probes written
+68 probes written
+
+==============================================================================
+DELTA  gfx6 (gfx600)  ->  gfx7 (gfx700)
+==============================================================================
+  flat_load_dword            FAIL(instruction not supported on this GPU) dc300000 00000002
+  flat_load_dword_off        FAIL(instruction not supported on this GPU) FAIL(flat offset modifier is not supported on this GPU)
+  flat_load_dwordx4          FAIL(instruction not supported on this GPU) dc380000 00000002
+  flat_store_dword           FAIL(instruction not supported on this GPU) dc700000 00000002
+  sm_buffer_off_100          FAIL(operands are not valid for this GPU or mode) c20400ff 00000100
+  smem_load_dword_off_100    FAIL(operands are not valid for this GPU or mode) c00400ff 00000100
+  smem_load_dword_off_3fc    FAIL(operands are not valid for this GPU or mode) c00400ff 000003fc
+  smem_load_dword_off_400    FAIL(operands are not valid for this GPU or mode) c00400ff 00000400
+  smem_load_dword_off_ffff   FAIL(operands are not valid for this GPU or mode) c00400ff 0000ffff
+  smem_load_dword_off_fffff  FAIL(operands are not valid for this GPU or mode) c00400ff 000fffff
+
+==============================================================================
+DELTA  gfx7 (gfx700)  ->  gfx8 (gfx803)
+==============================================================================
+  cvt_pk_u8_f32              d2bc0000 040e0501                  d1dd0000 040e0501
+  cvt_pknorm_i16             5a000501                           d2940000 00020501
+  cvt_pkrtz                  5e000501                           d2960000 00020501
+  dpp_add_f32                FAIL(dpp variant of this instruction is not supported) 020004fa ff00e401
+  dpp_mov_b32                FAIL(dpp variant of this instruction is not supported) 7e0002fa ff00b101
+  ds_read_b32                d8d80000 00000001                  d86c0000 00000001
+  ds_read_b32_off            d8d80010 00000001                  d86c0010 00000001
+  ds_write_b32               d8340000 00000100                  d81a0000 00000100
+  exec_s_mov_exec            befe04c1                           befe01c1
+  exp_compr                  f8001c0f 00000100                  c4001c0f 00000100
+  exp_mrt0                   f800180f 03020100                  c400180f 03020100
+  exp_mrt7                   f800187f 03020100                  c400187f 03020100
+  exp_mrtz                   f800188f 00000000                  c400188f 00000000
+  exp_no_done                f800020f 03020100                  c400020f 03020100
+  exp_null                   f8001890 00000000                  c4001890 00000000
+  exp_param0                 f8000a0f 03020100                  c4000a0f 03020100
+  exp_param31                f8000bff 03020100                  c4000bff 03020100
+  exp_pos0                   f80008cf 03020100                  c40008cf 03020100
+  exp_pos1                   f80008df 03020100                  c40008df 03020100
+  exp_pos3                   f80008ff 03020100                  c40008ff 03020100
+  f16_add                    FAIL(instruction not supported on this GPU) 3e000501
+  f16_cvt_pkrtz              5e000501                           d2960000 00020501
+  f16_fma                    FAIL(instruction not supported on this GPU) d1ee0000 040e0501
+  f16_hi_operand             FAIL(instruction not supported on this GPU) FAIL(not a valid operand.)
+  f16_mad                    FAIL(instruction not supported on this GPU) d1ea0000 040e0501
+  f16_mul                    FAIL(instruction not supported on this GPU) 44000501
+  flat_load_dword            dc300000 00000002                  dc500000 00000002
+  flat_load_dwordx4          dc380000 00000002                  dc5c0000 00000002
+  idx_set_gpr_idx            FAIL(instruction not supported on this GPU) bf110100
+  idx_v_movrels              7e008701                           7e006f01
+  inline_1_div2pi            7e0002ff 3e22f983                  7e0002f8
+  interp_mov                 c80a0002                           d40a0002
+  interp_p1                  c8080000                           d4080000
+  interp_p1_f16              FAIL(instruction not supported on this GPU) d2740002 00020000
+  interp_p2                  c8090001                           d4090001
+  lit_vop2                   100002f4                           0a0002f4
+  lit_vop3_src0              d2820000 040a02f4                  d1c10000 040a02f4
+  lit_vop3_src2              d2820000 03d20501                  d1c10000 03d20501
+  mb_addr64                  e0308000 80000102                  FAIL(invalid operand for instruction)
+  mb_glc                     e0306000 80000100                  e0506000 80000100
+  mb_plain                   e0302000 80000100                  e0502000 80000100
+  mb_slc                     e0302000 80400100                  e0522000 80000100
+  mb_tfe                     e0302000 80800100                  e0502000 80800100
+  mimg_sample_d16            FAIL(d16 modifier is not supported on this GPU) FAIL(image data size does not match dmask and tfe)
+  misc_mov_m0                befc030c                           befc000c
+  misc_s_memrealtime         FAIL(instruction not supported on this GPU) c0940000 00000000
+  misc_s_memtime             c7800000                           c0900000 00000000
+  misc_s_mul_i32             93000201                           92000201
+  misc_s_mulk                b8000010                           b7800010
+  misc_setreg                ba800801 00000003                  ba000801 00000003
+  mubuf_load_dword_glc_slc   e0306000 80400100                  e0526000 80000100
+  mubuf_load_dword_idxen     e0302000 80000100                  e0502000 80000100
+  mubuf_load_dword_lds       e0312000 80000000                  e0512000 80000000
+  mubuf_load_dword_off16     e0302010 80000100                  e0502010 80000100
+  mubuf_load_dword_off4095   e0302fff 80000100                  e0502fff 80000100
+  mubuf_load_dword_off4096   e0302000 80000100                  e0502000 80000100
+  mubuf_load_dword_offen     e0301000 80000100                  e0501000 80000100
+  mubuf_load_dword_soff_sgpr e0302000 04000100                  e0502000 04000100
+  mubuf_load_dwordx4_idxen   e0382000 80000100                  e05c2000 80000100
+  mubuf_load_ushort          e0282000 80000100                  e0482000 80000100
+  sdwa_mul_f32               FAIL(sdwa variant of this instruction is not supported) 0a0004f9 06040601
+  sm_buffer_off_100          c20400ff 00000100                  c0220200 00000100
+  sm_buffer_off_max8         c20401ff                           c0220200 000000ff
+  sm_buffer_soff_sgpr        c2040004                           c0200200 00000004
+  sm_load_dwordx2            c0440100                           c0060200 00000000
+  smem_buffer_load_dword     c2040100                           c0220200 00000000
+  smem_buffer_load_dwordx16  c3040100                           c0320200 00000000
+  smem_buffer_load_dwordx4   c2840120                           c02a0200 00000020
+  smem_buffer_load_dwordx8   c2c40130                           c02e0200 00000030
+  smem_dcache_inv            c7c00000                           c0800000 00000000
+  smem_load_dword_off0       c0040100                           c0020200 00000000
+  smem_load_dword_off20      c0040120                           c0020200 00000020
+  smem_load_dword_off4       c0040104                           c0020200 00000004
+  smem_load_dword_off_100    c00400ff 00000100                  c0020200 00000100
+  smem_load_dword_off_3fc    c00400ff 000003fc                  c0020200 000003fc
+  smem_load_dword_off_400    c00400ff 00000400                  c0020200 00000400
+  smem_load_dword_off_ff     c00401ff                           c0020200 000000ff
+  smem_load_dword_off_ffff   c00400ff 0000ffff                  c0020200 0000ffff
+  smem_load_dword_off_fffff  c00400ff 000fffff                  c0020200 000fffff
+  smem_load_dword_off_unalign c0040101                           c0020200 00000001
+  smem_load_dword_soff_sgpr  c0040004                           c0000200 00000004
+  smem_load_dwordx16         c1040100                           c0120200 00000000
+  smem_load_dwordx4          c0840100                           c00a0200 00000000
+  smem_load_dwordx8          c0c40100                           c00e0200 00000000
+  smem_load_glc              FAIL(cache policy is not supported for SMRD instructions) c0030200 00000000
+  smem_store_dword           FAIL(instruction not supported on this GPU) c0420200 00000000
+  sop_s_and_b64              87800402                           86800402
+  sop_s_movrels              be802e01                           be802a01
+  tb_d                       e80b2000 80000100                  e809a000 80000100
+  v3_mad                     d2820000 040e0501                  d1c10000 040e0501
+  v3_mad_abs0                d2820100 040e0501                  d1c10100 040e0501
+  v3_mad_clamp               d2820800 040e0501                  d1c18000 040e0501
+  v3_mad_mul2                d2820000 0c0e0501                  d1c10000 0c0e0501
+  v3_mad_neg0                d2820000 240e0501                  d1c10000 240e0501
+  v3_mad_omod_div2           d2820000 1c0e0501                  d1c10000 1c0e0501
+  v_and_b32                  36000501                           26000501
+  v_exp                      7e004b01                           7e004101
+  v_floor                    7e004901                           7e003f01
+  v_fract                    7e004101                           7e003701
+  v_log                      7e004f01                           7e004301
+  v_lshlrev                  34000282                           24000282
+  v_mad_u32_u24              d2860000 040e0501                  d1c30000 040e0501
+  v_max_f32                  20000501                           16000501
+  v_min_f32                  1e000501                           14000501
+  v_rsq                      7e005d01                           7e004901
+  v_sqrt                     7e006701                           7e004f01
+  v_trunc                    7e004301                           7e003901
+  vop1_rcp_f32               7e005501                           7e004501
+  vop2_add_f32               06000501                           02000501
+  vop2_mac_f32               3e000501                           2c000501
+  vop2_madmk_f32             40000501 40000000                  2e000501 40000000
+  vop2_mul_f32               10000501                           0a000501
+  vop2_sub_f32               08000501                           04000501
+  vop3_cndmask_e64           d2000001 01a9ecf3                  d1000001 01a9ecf3
+  vop3_fma_f32               d2960000 040e0501                  d1cb0000 040e0501
+  vop3_mad_f32               d2820000 040e0501                  d1c10000 040e0501
+  vop3_med3_f32              d2ae0000 040e0501                  d1d60000 040e0501
+  vop3_mul_f32_e64           d2100000 00020501                  d1050000 00020501
+  vopc_cmp_eq_u32_e64        d1840000 00020081                  d0ca0000 00020081
+  vopc_cmp_eq_u32_vcc        7d840081                           7d940081
+
+==============================================================================
+DELTA  gfx8 (gfx803)  ->  gfx9 (gfx900)
+==============================================================================
+  f16_fma                    d1ee0000 040e0501                  d2060000 040e0501
+  f16_mad                    d1ea0000 040e0501                  d2030000 040e0501
+  f16_pk_add_f16             FAIL(instruction not supported on this GPU) d38f4000 18020501
+  f16_pk_mul_f16             FAIL(instruction not supported on this GPU) d3904000 18020501
+  flat_load_dword_off        FAIL(flat offset modifier is not supported on this GPU) dc500010 00000002
+  global_load_dword          FAIL(instruction not supported on this GPU) dc508000 007f0002
+  global_load_dword_saddr    FAIL(instruction not supported on this GPU) dc508000 00000002
+  global_store_dword         FAIL(instruction not supported on this GPU) dc708000 007f0002
+  idx_v_movrels              7e006f01                           FAIL(instruction not supported on this GPU)
+  mi_r128                    FAIL(invalid operand for instruction) FAIL(r128 modifier is not supported on this GPU)
+  mimg_sample_a16            FAIL(a16 modifier is not supported on this GPU) f0808f00 00400002
+  mimg_sample_d16            FAIL(image data size does not match dmask and tfe) f0800f00 80400002
+  scratch_load_dword         FAIL(instruction not supported on this GPU) dc504000 007f0002
+  scratch_load_dword_soff    FAIL(instruction not supported on this GPU) dc504000 00040000
+  smem_load_dword_imm_plus_sgpr FAIL(not a valid operand.)         c0024200 08000010
+  vop3_lshl_add_u32          FAIL(instruction not supported on this GPU) d1fd0000 04090501
+  wait_expcnt0               bf8c0f0f                           bf8ccf0f
+  wait_lgkmcnt0              bf8c007f                           bf8cc07f
+  wait_lgkmcnt15             bf8c0f7f                           bf8ccf7f
+  wait_vmcnt16               FAIL(too large value for vmcnt)    bf8c4f70
+  wait_vmcnt63               FAIL(too large value for vmcnt)    bf8ccf7f
+
+==============================================================================
+INTRA-GENERATION SPLITS (a difference *within* one generation)
+==============================================================================
+  mimg_sample_d16            gfx8:
+      gfx801,gfx802,gfx803,gfx805            FAIL(image data size does not match dmask and tfe)
+      gfx810                                 f0800f00 80400002
+  vop3_fmac_f32              gfx9:
+      gfx900,gfx902,gfx904,gfx909,gfx90c     FAIL(instruction not supported on this GPU)
+      gfx906,gfx908                          76000501
+############ 3. SMEM offset UNITS via LLVM's own code generator
+   (same IR, byte offset 128 -> 0x20 means DWORD units, 0x80 means BYTE units)
+gfx600   
+gfx700   
+gfx803   
+gfx900   
+############ 4. instrument controls
+-- .text section size must match extracted .bin --
+  [ 2] .text             PROGBITS        0000000000000000 000040 00001c 00  AX  0   0  4
+   ps_solid.gfx803.bin bytes = 28  (expect 28 = 0x1c)
+-- no silently-empty .text anywhere --
+/s/matrix.tsv:0
+/s/probe.tsv:0
+/s/probe2.tsv:0
+-- a 1-instruction source change must be detected as DIFFERENT --
+   gfx600   DIFFERENT (good)
+   gfx803   DIFFERENT (good)
+############ done
