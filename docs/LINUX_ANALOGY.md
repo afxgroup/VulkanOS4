@@ -41,7 +41,19 @@ a GPU VM did not make parsing unnecessary in Linux either. The argument survives
 on its own merits — an explicit uAPI verb beats content introspection, and it is
 what keeps the two sides' obligations separable — but not by appeal to authority.
 
-**Suggestion.** CONTRACTS **v0.3** should make fence-only submit the sanctioned
+> **ALREADY DONE when this was written (corrected 2026-07-26).** The suggestion
+> below recommends, as future work, a change that landed in `CONTRACTS.md` v0.3
+> the same day — §2 already spells a barrier-only submit as the ratified
+> fence-only submit. This doc was written from other documents rather than from
+> the tree, which is the one systematic error the three sibling analogy
+> documents share; nine such instances were found across them. Rule of record:
+> **cite code, never a proposal section** — a proposal is the artefact most
+> likely to be superseded, because the work it proposes is what supersedes it.
+> Still open, and genuinely: gcngfx's RENDER queue rejects NULL/0 (`BADARGS`).
+> Every other queue there already accepts it.
+
+**Suggestion (already implemented — see box).** CONTRACTS **v0.3** should make
+fence-only submit the sanctioned
 spelling and retire the draw-less-payload contract. Note the ordering
 constraint: gcngfx **rejects** the ratified form today, so the ICD needs either
 the backend fix first or a documented interim per-backend no-op. This is already

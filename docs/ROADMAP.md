@@ -50,9 +50,13 @@ tiers, and the lowest one is already settled:
    identical floor (`App -> Warp3D.library -> W3D_<backend>.library ->
    gpu.library/IGpu -> backend`), and so do MiniGL, ogles2 and compute.
    **This already delivers "a new card gets the layers for free"** — one
-   gpu.library backend, and every IGpu consumer works. Warp3D and Warp3D Nova
-   are HERE TODAY, not greenfield (`P96_Replacement/tests/warp3d`,
-   `tests/warp3dnova`).
+   gpu.library backend, and every IGpu consumer works. **Warp3D** is HERE TODAY,
+   not greenfield: a complete HW driver over IGpu (`vgfx/src/w3d`, exercised by
+   `P96_Replacement/tests/warp3d`). **Warp3D Nova is NOT** — corrected
+   2026-07-26; the cited `tests/warp3dnova` is a 26-line presence probe that
+   opens the library and prints its version, not a driver. Nova over IGpu
+   remains to be written, and per P96 `PLAN.md` "Anti-replication strategy" the
+   intended route is over Vulkan rather than as a second direct IGpu consumer.
 3. **On Vulkan** — a sibling consumer of IGpu, not the floor beneath the
    layers. Buys the same portability at a higher level of abstraction, plus a
    much richer feature set to translate against.

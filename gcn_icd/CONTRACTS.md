@@ -25,14 +25,38 @@ landed:
    lane from first commit; read it before choosing where a gfx8 constant lives.
    §1's constants are now explicitly level-scoped.
 
-**Deferred to v0.4: sync→async render submission.** "Synchronous v1" is
-contract-visible text (below, and in §2's fencing rule), so it cannot change
-silently — but the shape depends on a decision in another repo: whether
+**v0.4 sync→async render submission — THE BLOCKING DECISION IS IN (2026-07-26).**
+This section used to defer v0.4 pending "a decision in another repo": whether
 gpu.library adopts per-engine fence contexts (`(backend, context, seq)`, the
-`dma_fence` shape) or keeps one seq space per backend and reconciles engines
-with GCNgfx `docs/ASYNC_SUBMIT_PROPOSAL.md` §8's min-over-busy-engines.
-Writing v0.4 before that resolves means writing it twice. Lanes may assume
-synchronous submit until v0.4 says otherwise.
+`dma_fence` shape) or keeps one seq space per backend. That decision was itself
+waiting on async submit — **a circular deferral, with each side blocked on the
+other.** It is broken, in favour of the status quo:
+
+> **gpu.library KEEPS ONE SEQUENCE SPACE PER BACKEND.** Fence identity stays
+> `(backendId, seq)`. Per-engine contexts were investigated and **deferred**;
+> the ruling is published as a negative decision precisely so this repo is not
+> left waiting. See `P96_Replacement/docs/API_DESIGN.md` "One sequence space per
+> backend" and `docs/LINUX_ANALOGY_VERDICTS.md` §1.
+
+So GCNgfx `docs/ASYNC_SUBMIT_PROPOSAL.md` §8's min-over-busy-engines is the
+**permanent** shape, not a fallback — and it is already implemented and soaked
+(`fc1c84d`). v0.4 can now be written once.
+
+What the ICD must know about it, none of which is new API:
+
+- The backend's retirement watermark is contractually *"truthful retired-up-to
+  across all engines"*. `GpuFence` stays an opaque `int64`; nothing about
+  engines is visible above IGpu, so **the ICD needs no change** for this.
+- **Over-reporting corrupts silently** — a watermark ahead of the truth advances
+  a timeline early, so `vkWaitSemaphores` / `vkWaitForFences` return while the
+  GPU is still writing. There is no error path. If a backend ever looks like it
+  is retiring early, that is the shape of the bug.
+- Reopen triggers are listed in the P96 section above; the nearest is this
+  driver gaining a second, independent retirement producer — which is exactly
+  what v0.4's ISR-side retirement would be. If v0.4 adds one, re-read that
+  section before designing the fence handling.
+
+Lanes may assume synchronous submit until v0.4 says otherwise.
 
 (Old §4, shared logistics, became §5 on 2026-07-26; nothing referenced it by
 number.)
@@ -156,15 +180,28 @@ none may be applied to another GCN generation without re-verification.
   explicit verb beats introspection — not on an appeal to amdgpu.)
   The core also rejects `payload == NULL` with `length != 0` as
   `GPUERR_BADARGS` on every backend's behalf.
-- **INTERIM (2026-07-26), and it WILL bite Lane A on hardware**: gcngfx does
-  not accept the ratified form yet — `gcn_gfx_submit_payload` bails on
-  `payload_le == NULL` and `gcn_Submit` returns **`GPUERR_BADARGS`** (it
-  returned `GPUERR_TIMEOUT` before GCNgfx `fc1c84d`). vgfx and
-  null accept it. Until gcngfx is fixed, the ICD needs a per-backend fallback:
-  a draw-less PM4 payload still works there, because gcngfx skips such
-  payloads off the gfx ring and retires them on the shared fence. Treat that
-  as a workaround with an expiry date, isolated behind one helper, not as the
-  contract.
+- **INTERIM (2026-07-26), and it WILL bite Lane A on hardware — but only on ONE
+  queue.** gcngfx rejects the ratified form on `GPU_QUEUE_RENDER` only:
+  `gcn_gfx_submit_payload` bails on `payload_le == NULL` (and on `ndw == 0`)
+  *before* the draw-less classifier runs, and `gcn_Submit` returns
+  **`GPUERR_BADARGS`** (it returned `GPUERR_TIMEOUT` before GCNgfx `fc1c84d`).
+  **Every other queue there already conforms** — the SDMA path has implemented
+  exactly the core's rule since 2026-07-13 — so transfer and present submits
+  need no workaround at all. vgfx and null accept it everywhere.
+  Until the render queue is fixed, the ICD needs a per-backend fallback on that
+  queue: a draw-less PM4 payload. **Do not rely on the old explanation of why
+  that works** — "gcngfx skips such payloads off the gfx ring" is only true when
+  the engine is idle; when it is busy the draw-less path deliberately falls back
+  to a real ring submit. Both arms return a valid seq, so the workaround
+  functions, but anyone debugging it against the old sentence would be chasing a
+  mechanism that is not running. Treat it as a workaround with an expiry date,
+  isolated behind one helper, not as the contract.
+- **Enforcement, decided in P96 2026-07-26.** "Every backend MUST accept it" was
+  always the rule; what was open is where non-compliance is CAUGHT. Answer:
+  `gpu_conform`, gated behind the trigger "gcngfx accepts NULL/0 on RENDER,
+  hardware-verified". Registration cannot test it (it is deliberately call-free,
+  and `GPU_SubmitA` returns `GPUERR_BUSY` while a backend's server is starting).
+  So this stays an ICD-visible gap until that lands, not a build break.
 - **Retracted rationale, recorded because it was load-bearing for weeks.**
   This section previously justified the draw-less skip as "an armed CE
   deadlocks on a draw-less stream — CE_WAITING_ON_DE, HW-proven". **That
@@ -235,15 +272,43 @@ bit the emitter cannot honour for the running level** — an application acts on
 those. A pipeline dropping to the CPU-shade fallback is a performance outcome
 and is fine; a false capability is not.
 
-**Identification.** Preferred surface: the backend declares its generation at
-registration, `GPUTAG_GfxLevel` (uint32: 6/7/8/9), one tag per fact per the
-ratified 10.5 pattern — the backend is the component that must know. Absent =
-0 = undeclared, and the ICD then enumerates no HW device there (the same honest
-under-report rule as `GPUCAP_DEVICEADDRESS`). **This is a gpu.library change and
-therefore coordinator work — not yet proposed.** Until it exists, lanes may
-derive the level from `GPUATTR_BackendPCIDevice` (gcngfx registers
-`GPUTAG_PCIDevice`) via an ICD-side PCI-ID table; that is a stopgap, not the
-contract.
+**Identification — LANDED 2026-07-26, the stopgap is retired.** The backend
+declares its generation at registration and the ICD reads it back. **Two tags,
+not one**, because a bare level does not name an ISA: GFX8 spans
+gfx800/801/802/803, and §1's blob takes the sub-target as a compiler *input*.
+
+| Registration tag (backend) | Read back as (ICD) | Meaning |
+|---|---|---|
+| `GPUTAG_GfxLevel` | `GPUATTR_OutGfxLevel` | AMD: 6/7/8/9 |
+| `GPUTAG_GfxRevision` | `GPUATTR_OutGfxRevision` | ISA sub-target: 803 = Polaris, 601 = Pitcairn |
+
+Both are `uint32`, selected by `GPUATTR_BackendIndex`, and **vendor-scoped** —
+meaningless without the vendor, which the ICD already has from
+`GPUATTR_BackendPCIDevice`. There is no cross-vendor scale. Absent = 0 =
+undeclared, and the ICD then enumerates no HW device there (the same honest
+under-report rule as `GPUCAP_DEVICEADDRESS`). gcngfx declares both (803/Polaris,
+601/Pitcairn, from the one ASIC table in `gcn_pci.c`); vgfx declares 0/0
+explicitly, since virtio-gpu is not a GCN part.
+
+**Delete any ICD-side PCI-ID table.** That stopgap is withdrawn: gcngfx
+registers only for the device ids it supports, so a client-side copy is a mirror
+that goes stale the moment a card is added to the driver — silently, answering
+wrongly rather than not at all.
+
+**What these do NOT answer, so nobody plans around them.** Surface tiling and
+the addrlib inputs behind `vkGetImageMemoryRequirements` — `GB_ADDR_CONFIG`
+(computed live from per-*board* memory config), the per-*chip* tile/macrotile
+tables, and the SE/RB geometry read from AtomBIOS at boot. None of that is
+derivable from a generation number **or** from a PCI id, so §"image layout"
+still owns it, and when it is needed it wants a backend-owned struct behind an
+op rather than more scalar tags.
+
+**Caveat, stated rather than discovered later:** these cannot be exercised
+distinguishingly yet. gcngfx is Polaris-only in gmc/gfx/dce, so it reports a
+constant 8/803 on all reachable hardware — behaviourally identical to the ICD
+hardcoding it. The value arrives with the second generation; the test that
+proves it is a Pitcairn reporting 6/601, which needs GFX6 IP modules that do not
+exist. Treat this as plumbing verified as plumbing.
 
 Consequences per lane:
 
