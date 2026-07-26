@@ -6,7 +6,12 @@ If your lane discovers a contract is wrong or incomplete: STOP, write up the
 gap (what you needed, why the contract can't express it), and report. Do not
 edit this file or work around it by reaching into another lane's directory.
 
-Status: v0.2 (2026-07-17). §2's transport is IMPLEMENTED and deployed:
+Status: v0.2 (2026-07-17), plus one requirement admitted 2026-07-26: **§4,
+all-GCN support and the feature level we may report**. It binds every lane from
+first commit — read it before choosing where a gfx8 constant lives. (Old §4,
+shared logistics, is now §5; nothing referenced it by number.)
+
+§2's transport is IMPLEMENTED and deployed:
 gcngfx executes `GPU_QUEUE_RENDER` payloads on the CP gfx ring
 (`gcn_gfx_submit_payload`, backend EOP fence, synchronous v1) and the
 device-address query is live (ratified surface below). Golden captures for
@@ -148,7 +153,65 @@ labour is RADV's, and it is binding on all lanes:
 - Memory-type convention: WRITECOMBINE ⇒ HOST_COHERENT (write-only),
   CACHED ⇒ non-coherent (needs vkFlushMappedMemoryRanges).
 
-## 4. Shared logistics
+## 4. Multi-generation GCN support and reported feature level
+
+**Requirement (admitted 2026-07-26, v0.3 item).** `igpu_vk` targets **all GCN
+parts**, not just the gfx803 first target. At device enumeration it must
+establish which ASIC it is on and report a Vulkan `apiVersion`, limits, features
+and extension list it can actually honour **on that ASIC**. No lane may emit a
+command it cannot lower for the running gfx level.
+
+**The constraint is OURS, not the hardware's.** RADV runs Vulkan 1.3 on GFX6, so
+"what is this card capable of" answers 1.3 for every GCN part and tells us
+nothing. What we may advertise is
+
+```
+apiVersion = min( what compiler + PM4 emission implement for this gfx_level,
+                  what the backend implements for this ASIC )
+```
+
+Advertise low and raise it as lanes land. **Never advertise a version or feature
+bit the emitter cannot honour for the running level** — an application acts on
+those. A pipeline dropping to the CPU-shade fallback is a performance outcome
+and is fine; a false capability is not.
+
+**Identification.** Preferred surface: the backend declares its generation at
+registration, `GPUTAG_GfxLevel` (uint32: 6/7/8/9), one tag per fact per the
+ratified 10.5 pattern — the backend is the component that must know. Absent =
+0 = undeclared, and the ICD then enumerates no HW device there (the same honest
+under-report rule as `GPUCAP_DEVICEADDRESS`). **This is a gpu.library change and
+therefore coordinator work — not yet proposed.** Until it exists, lanes may
+derive the level from `GPUATTR_BackendPCIDevice` (gcngfx registers
+`GPUTAG_PCIDevice`) via an ICD-side PCI-ID table; that is a stopgap, not the
+contract.
+
+Consequences per lane:
+
+- **Lane B**: `gfx_level` in §1's blob is an **input**, not an annotation. The
+  compiler must **refuse** a level it does not implement — cleanly, so the ICD
+  falls back to CPU shading for that pipeline — and never silently emit gfx8
+  encodings for another generation. The per-pipeline fallback is also the
+  multi-generation safety net.
+- **Lane D**: register offsets, T#/S#/V# descriptor layouts and tiling all move
+  between generations. The emitter must be **table-driven by gfx level from the
+  start**; do not inline gfx8 constants at call sites. `testdata/golden_pm4/` is
+  gfx803-only — other levels need their own captures from real cards, and byte
+  parity is claimed per level, never across.
+- **Lane A**: one **per-gfx-level capability table** drives
+  `VkPhysicalDeviceProperties.apiVersion`, limits, features and the extension
+  list, consulted at enumeration. No ad-hoc per-ASIC conditionals scattered
+  through the ICD.
+- **§1's "16 user SGPRs per stage" is a GFX8 fact** (D3 finding), not a
+  universal one. Every such HW constant in this document is implicitly
+  level-scoped and must be re-verified before it is applied to another
+  generation.
+
+Note for the loader: the software ICD reports `VK_API_VERSION_1_3` per physical
+device, so a GCN part on which `igpu_vk` reports less is a legitimate reason for
+the loader to prefer another ICD for an application that demands more. Confirm
+the loader actually selects on `apiVersion` before relying on that.
+
+## 5. Shared logistics
 
 - **Hardware**: the X5000 is a single shared resource; Agent C owns it by
   default, Agent D books slots through the coordinator. QEMU targets
